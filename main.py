@@ -4,8 +4,16 @@ import os
 import time
 from PIL import Image
 
+# Suppress the Pygame welcome message
+os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning, module="pygame.pkgdata")
+import pygame
+from moviepy.video.io.VideoFileClip import VideoFileClip
+
 # ASCII characters from dark to light
 ASCII_CHARS = " .:-=+*#%@"
+TEMP_AUDIO_FILE = "temp_audio.mp3"
 
 def get_terminal_size():
     """Gets the current size of the terminal."""
@@ -59,16 +67,36 @@ def frame_to_ascii(frame, width):
         print(f"Error converting frame: {e}")
         return ""
 
-def play_video(video_path, width):
+def play_video(video_path, width, play_audio):
     """Plays a video file as ASCII art in the terminal."""
+    audio_extracted = False
     try:
+        if play_audio:
+            try:
+                # Extract audio from video
+                video_clip = VideoFileClip(video_path)
+                if video_clip.audio:
+                    video_clip.audio.write_audiofile(TEMP_AUDIO_FILE, logger=None)
+                    video_clip.close()
+                    audio_extracted = True
+                    
+                    # Initialize pygame mixer and play audio
+                    pygame.mixer.init()
+                    pygame.mixer.music.load(TEMP_AUDIO_FILE)
+                    pygame.mixer.music.play()
+                else:
+                    print("No audio track found in the video.")
+                    play_audio = False
+            except Exception as e:
+                print(f"Could not process audio: {e}")
+                play_audio = False
+
         cap = cv2.VideoCapture(video_path)
         if not cap.isOpened():
             print(f"Error: Could not open video file at {video_path}")
             return
 
         fps = cap.get(cv2.CAP_PROP_FPS)
-        # If FPS is 0, it might be a webcam or a corrupted file. Use a default.
         delay = 1 / fps if fps > 0 else 1/30 
 
         while True:
@@ -76,17 +104,28 @@ def play_video(video_path, width):
             if not ret:
                 # Loop the video
                 cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
+                if play_audio and audio_extracted:
+                    pygame.mixer.music.rewind()
                 continue
 
-            # Get ASCII representation of the frame
             ascii_frame = frame_to_ascii(frame, width)
 
-            # Clear the terminal and print the frame
             os.system('cls' if os.name == 'nt' else 'clear')
             print(ascii_frame, end='', flush=True)
 
-            # Wait for the next frame
-            time.sleep(delay)
+            # --- Synchronization ---
+            if play_audio and audio_extracted:
+                video_ts_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
+                audio_ts_ms = pygame.mixer.music.get_pos()
+                
+                # If video is ahead of audio, wait
+                if video_ts_ms > audio_ts_ms:
+                    delay_s = (video_ts_ms - audio_ts_ms) / 1000.0
+                    time.sleep(delay_s)
+                # If audio is far ahead, we could skip video frames, but for now, we play them as fast as possible.
+            else:
+                # Fallback to FPS-based delay if no audio
+                time.sleep(delay)
 
     except KeyboardInterrupt:
         print("\nPlayback stopped by user.")
@@ -95,11 +134,17 @@ def play_video(video_path, width):
     finally:
         if 'cap' in locals() and cap.isOpened():
             cap.release()
+        if play_audio and audio_extracted:
+            pygame.mixer.music.stop()
+            pygame.mixer.quit()
+        if audio_extracted and os.path.exists(TEMP_AUDIO_FILE):
+            os.remove(TEMP_AUDIO_FILE)
 
 def main():
     parser = argparse.ArgumentParser(description="Play video files as ASCII art in the terminal.")
     parser.add_argument("video_path", help="Path to the video file.")
     parser.add_argument("-w", "--width", type=int, help="Width of the ASCII output in characters. Defaults to terminal width.")
+    parser.add_argument("-m", "--music", action="store_true", help="Play audio from the video file.")
     
     args = parser.parse_args()
 
@@ -110,7 +155,7 @@ def main():
     terminal_width, _ = get_terminal_size()
     output_width = args.width if args.width else terminal_width
 
-    play_video(args.video_path, output_width)
+    play_video(args.video_path, output_width, args.music)
 
 if __name__ == "__main__":
     main()
