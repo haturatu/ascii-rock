@@ -69,8 +69,19 @@ def frame_to_ascii(frame, width):
 
 def play_video(video_path, width, play_audio):
     """Plays a video file as ASCII art in the terminal."""
+    # Imports needed for terminal control (Unix-specific)
+    import sys
+    import select
+    import tty
+    import termios
+
     audio_extracted = False
+    
+    # Setup terminal for single-character input
+    old_settings = termios.tcgetattr(sys.stdin)
     try:
+        tty.setcbreak(sys.stdin.fileno())
+
         if play_audio:
             try:
                 # Extract audio from video
@@ -99,13 +110,36 @@ def play_video(video_path, width, play_audio):
         fps = cap.get(cv2.CAP_PROP_FPS)
         delay = 1 / fps if fps > 0 else 1/30 
 
-        while True:
+        running = True
+        paused = False
+        while running:
+            # Check for keyboard input to pause/resume
+            if select.select([sys.stdin], [], [], 0) == ([sys.stdin], [], []):
+                key = sys.stdin.read(1)
+                if key == ' ':
+                    paused = not paused
+                    if paused:
+                        if play_audio and audio_extracted: pygame.mixer.music.pause()
+                    else:
+                        if play_audio and audio_extracted: pygame.mixer.music.unpause()
+                elif key.lower() == 'q': # Add a quit key
+                    running = False
+
+            if not running:
+                break
+
+            if paused:
+                time.sleep(0.1)
+                continue
+
             ret, frame = cap.read()
             if not ret:
-                # Loop the video
-                cap.set(cv2.CAP_PROP_POS_FRAMES, 0)
-                if play_audio and audio_extracted:
-                    pygame.mixer.music.rewind()
+                running = False # Video ended
+                continue
+            
+            # If audio finishes, stop video
+            if play_audio and audio_extracted and not pygame.mixer.music.get_busy():
+                running = False
                 continue
 
             ascii_frame = frame_to_ascii(frame, width)
@@ -114,24 +148,26 @@ def play_video(video_path, width, play_audio):
             print(ascii_frame, end='', flush=True)
 
             # --- Synchronization ---
-            if play_audio and audio_extracted:
+            if play_audio and audio_extracted and pygame.mixer.music.get_busy():
                 video_ts_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
                 audio_ts_ms = pygame.mixer.music.get_pos()
                 
-                # If video is ahead of audio, wait
-                if video_ts_ms > audio_ts_ms:
-                    delay_s = (video_ts_ms - audio_ts_ms) / 1000.0
-                    time.sleep(delay_s)
-                # If audio is far ahead, we could skip video frames, but for now, we play them as fast as possible.
+                if audio_ts_ms > 0 and video_ts_ms > audio_ts_ms:
+                    sync_delay = (video_ts_ms - audio_ts_ms) / 1000.0
+                    if sync_delay > 0.001:
+                        time.sleep(sync_delay)
             else:
-                # Fallback to FPS-based delay if no audio
                 time.sleep(delay)
 
-    except KeyboardInterrupt:
-        print("\nPlayback stopped by user.")
-    except Exception as e:
-        print(f"An error occurred: {e}")
+    except (KeyboardInterrupt, Exception) as e:
+        if not isinstance(e, KeyboardInterrupt):
+             print(f"\nAn error occurred: {e}")
+        else:
+             print("\nPlayback stopped by user.")
     finally:
+        # Restore terminal settings
+        termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+
         if 'cap' in locals() and cap.isOpened():
             cap.release()
         if play_audio and audio_extracted:
@@ -141,7 +177,7 @@ def play_video(video_path, width, play_audio):
             os.remove(TEMP_AUDIO_FILE)
 
 def main():
-    parser = argparse.ArgumentParser(description="Play video files as ASCII art in the terminal.")
+    parser = argparse.ArgumentParser(description="Play video files as ASCII art in the terminal. Controls: Space to pause/resume, Q to quit.")
     parser.add_argument("video_path", help="Path to the video file.")
     parser.add_argument("-w", "--width", type=int, help="Width of the ASCII output in characters. Defaults to terminal width.")
     parser.add_argument("-m", "--music", action="store_true", help="Play audio from the video file.")
