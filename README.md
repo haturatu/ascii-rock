@@ -1,37 +1,55 @@
-# ASCII Video Player
+# ASCII Rock
 
-This project converts a video file into ASCII art and plays it directly in your terminal.
+A command-line tool to play video files as ASCII art directly in your terminal.
+  
+This is the CLI implementation of the ascii-rock series by contemporary artist Yoshi Sodeoka.  
 
-## Setup
+[Yoshi sodeoka](https://sodeoka.com/)  
 
-1.  **Navigate to the project directory.**
+## Features
 
-    ```bash
-    cd ascii_video_player
-    ```
+- Plays video files in ASCII.
+- Supports audio playback.
+- Automatically down-converts high-resolution videos to 360p for better performance (can be disabled).
+- Interactive playback controls (pause/resume with Space, quit with 'q').
 
-2.  **Install the dependencies:**
+## Installation
 
-    ```bash
-    pip install -r requirements.txt
-    ```
+1. Clone this repository.
+2. Run the `install` command using the Makefile:
+
+```bash
+make install
+```
+
+This will install the `ascii-rock` command on your system.
 
 ## Usage
 
-Run the script from your terminal, providing the path to your video file.
-
 ```bash
-python main.py /path/to/your/video.mp4
+ascii-rock /path/to/your/video.mp4
 ```
 
 ### Options
 
-*   `-w` or `--width`: Set the width of the ASCII art output. It defaults to the current width of your terminal.
+The output of `ascii-rock -h`:
+```
+$ ascii-rock -h
+usage: ascii-rock [-h] [-w WIDTH] [-m] [--no-downconvert] video_path
 
-    ```bash
-    python main.py /path/to/your/video.mp4 --width 120
-    ```
+Play video files as ASCII art in the terminal.
 
-## How it Works
+Controls:
+  Space: Pause/Resume
+  q: Quit
 
-The script uses OpenCV to read the video file frame by frame. Each frame is then converted into an ASCII representation using the Pillow library for image manipulation. The terminal screen is cleared and redrawn for each frame to create the animation effect. The video will loop automatically. Press `Ctrl+C` to stop.
+positional arguments:
+  video_path            Path to the video file.
+
+options:
+  -h, --help            show this help message and exit
+  -w WIDTH, --width WIDTH
+                        Width of the ASCII output in characters. Defaults to terminal width.
+  -m, --music           Play audio from the video file.
+  --no-downconvert      Disable automatic 360p down-conversion for high-res videos.
+```

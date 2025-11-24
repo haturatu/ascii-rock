@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ascii-rock"
+version = "0.1.0"
+description = "A CLI tool to play video files as ASCII art in the terminal."
+readme = "README.md"
+requires-python = ">=3.8"
+
+dependencies = [
+  "opencv-python-headless",
+  "Pillow",
+  "moviepy",
+  "pygame",
+]
+
+[project.scripts]
+ascii-rock = "ascii_rock.main:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+packages = ["ascii_rock"]

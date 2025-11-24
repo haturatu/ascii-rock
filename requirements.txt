@@ -1,5 +1,0 @@
-opencv-python-headless
-Pillow
-moviepy
-pygame
-scikit-image

@@ -1,1 +1,17 @@
-*.mp4
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Environment
+.env
+venv/
+.venv/
+
+# Temp files
+temp_audio.mp3
