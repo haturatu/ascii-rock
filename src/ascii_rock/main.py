@@ -38,9 +38,14 @@ SYNC_TOLERANCE_MS = 80.0
 MAX_SYNC_SKIP_FRAMES = 30
 ANSI_HIDE_CURSOR = "\x1b[?25l"
 ANSI_SHOW_CURSOR = "\x1b[?25h"
+ANSI_DISABLE_WRAP = "\x1b[?7l"
+ANSI_ENABLE_WRAP = "\x1b[?7h"
+ANSI_ALT_SCREEN = "\x1b[?1049h"
+ANSI_MAIN_SCREEN = "\x1b[?1049l"
 ANSI_HOME = "\x1b[H"
 ANSI_CLEAR_SCREEN = "\x1b[2J"
 ANSI_CLEAR_TO_END = "\x1b[J"
+ANSI_CLEAR_LINE = "\x1b[K"
 BACKGROUND_THRESHOLD = 24
 LIGHT_BACKGROUND_THRESHOLD = 128
 EXPORT_FONT_SIZE = 14
@@ -380,21 +385,30 @@ class TerminalRenderer:
         self.last_line_count = 0
 
     def start(self):
-        self.output.write(ANSI_HIDE_CURSOR + ANSI_CLEAR_SCREEN + ANSI_HOME)
+        self.output.write(ANSI_ALT_SCREEN + ANSI_HIDE_CURSOR + ANSI_DISABLE_WRAP + ANSI_CLEAR_SCREEN + ANSI_HOME)
         self.output.flush()
 
     def draw(self, ascii_frame):
-        line_count = ascii_frame.count("\n")
-        if line_count < self.last_line_count:
-            suffix = ANSI_CLEAR_TO_END
-        else:
-            suffix = ""
-        self.output.write(ANSI_HOME + ascii_frame + suffix)
+        terminal_width, terminal_height = get_terminal_size()
+        max_width = max(1, terminal_width - 1)
+        max_height = max(1, terminal_height - 1)
+        lines = ascii_frame.splitlines()
+        visible_lines = lines[:max_height]
+        line_count = len(visible_lines)
+
+        chunks = []
+        for row, line in enumerate(visible_lines, start=1):
+            chunks.append(f"\x1b[{row};1H{line[:max_width]}{ANSI_CLEAR_LINE}")
+        for row in range(line_count + 1, self.last_line_count + 1):
+            if row > max_height:
+                break
+            chunks.append(f"\x1b[{row};1H{ANSI_CLEAR_LINE}")
+        self.output.write("".join(chunks))
         self.output.flush()
         self.last_line_count = line_count
 
     def stop(self):
-        self.output.write(ANSI_SHOW_CURSOR)
+        self.output.write(ANSI_ENABLE_WRAP + ANSI_SHOW_CURSOR + ANSI_MAIN_SCREEN)
         self.output.flush()
 
 def load_monospace_font(size):
