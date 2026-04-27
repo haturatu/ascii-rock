@@ -130,10 +130,13 @@ class PortAudioWavPlayer:
         self._thread = None
         self._stopped = threading.Event()
         self._pause_condition = threading.Condition()
+        self._stream_lock = threading.Lock()
         self._paused = False
         self._pause_started_at = None
         self._pause_seconds = 0.0
         self._started_at = None
+        self._written_frames = 0
+        self._position_lock = threading.Lock()
         self._initialized = False
         self._opened = False
         self._playback_error = None
@@ -217,10 +220,16 @@ class PortAudioWavPlayer:
             if not self._paused:
                 self._paused = True
                 self._pause_started_at = time.monotonic()
+                with self._stream_lock:
+                    if self._opened and self.stream:
+                        self._check(self.lib.Pa_StopStream(self.stream), "Could not pause PortAudio stream")
 
     def unpause(self):
         with self._pause_condition:
             if self._paused:
+                with self._stream_lock:
+                    if self._opened and self.stream:
+                        self._check(self.lib.Pa_StartStream(self.stream), "Could not resume PortAudio stream")
                 self._paused = False
                 if self._pause_started_at is not None:
                     self._pause_seconds += time.monotonic() - self._pause_started_at
@@ -228,17 +237,14 @@ class PortAudioWavPlayer:
                 self._pause_condition.notify_all()
 
     def get_pos(self) -> int:
-        if self._started_at is None:
-            return 0
-        paused_seconds = self._pause_seconds
-        if self._paused and self._pause_started_at is not None:
-            paused_seconds += time.monotonic() - self._pause_started_at
-        return max(0, int((time.monotonic() - self._started_at - paused_seconds) * 1000))
+        with self._position_lock:
+            return int(self._written_frames * 1000 / self.sample_rate)
 
     def is_busy(self) -> bool:
         if self._playback_error:
             raise self._playback_error
-        return not self._stopped.is_set() and self.get_pos() < int(self.duration_seconds * 1000)
+        with self._position_lock:
+            return not self._stopped.is_set() and self._written_frames < self.total_frames
 
     def stop(self):
         self._stopped.set()
@@ -270,12 +276,17 @@ class PortAudioWavPlayer:
                 frames_to_write = bytes_to_write // self.bytes_per_frame
                 chunk = self.pcm_data[offset : offset + frames_to_write * self.bytes_per_frame]
                 buffer = ctypes.create_string_buffer(chunk)
-                err = self.lib.Pa_WriteStream(self.stream, buffer, frames_to_write)
+                with self._stream_lock:
+                    if self._stopped.is_set() or self._paused:
+                        continue
+                    err = self.lib.Pa_WriteStream(self.stream, buffer, frames_to_write)
                 if err != PA_NO_ERROR:
                     message = self.lib.Pa_GetErrorText(err)
                     decoded = message.decode("utf-8", errors="replace") if message else f"error {err}"
                     self._playback_error = PortAudioError(f"Could not write audio to PortAudio stream: {decoded}")
                     break
                 offset += frames_to_write * self.bytes_per_frame
+                with self._position_lock:
+                    self._written_frames += frames_to_write
         finally:
             self._stopped.set()

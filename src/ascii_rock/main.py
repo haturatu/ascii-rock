@@ -672,10 +672,6 @@ def play_video(video_path, width, play_audio, no_downconvert, remove_background)
                 time.sleep(0.1)
                 continue
 
-            if play_audio and audio_extracted and audio_player and not audio_player.is_busy():
-                running = False
-                continue
-
             if play_audio and audio_extracted and audio_player and audio_player.is_busy():
                 running, _skipped = skip_video_frames_to_sync(reader, audio_player.get_pos())
                 if not running:
