@@ -10,7 +10,7 @@ This is the CLI implementation of the ascii-rock series by contemporary artist Y
 
 - Plays video files in ASCII.
 - Supports audio playback.
-- Automatically down-converts high-resolution videos to 360p for better performance (can be disabled).
+- Scales video frames to the terminal width while streaming them from ffmpeg.
 - Interactive playback controls (pause/resume with Space, quit with 'q').
 
 ## Installation
@@ -20,7 +20,7 @@ This is the CLI implementation of the ascii-rock series by contemporary artist Y
 
 ```bash
 # Debian/Ubuntu
-sudo apt install libportaudio2
+sudo apt install ffmpeg libportaudio2
 
 # From source
 git clone https://github.com/PortAudio/portaudio
@@ -38,8 +38,9 @@ sudo make install
 make install
 ```
 
-This will install the `ascii-rock` command on your system. Audio playback with
-`-m` requires the PortAudio shared library to be available at runtime.
+This will install the `ascii-rock` command on your system. Default video
+playback uses `ffmpeg` and `ffprobe` to stream scaled frames. Audio playback
+with `-m` requires the PortAudio shared library to be available at runtime.
 
 If PortAudio was installed under `/usr/local/lib`, refresh the dynamic loader
 cache:
@@ -82,5 +83,5 @@ options:
   -w WIDTH, --width WIDTH
                         Width of the ASCII output in characters. Defaults to terminal width.
   -m, --music           Play audio from the video file.
-  --no-downconvert      Disable automatic 360p down-conversion for high-res videos.
+  --no-downconvert      Disable ffmpeg frame scaling and decode full frames with OpenCV.
 ```
