@@ -3,17 +3,13 @@ import argparse
 import os
 import time
 from PIL import Image
-
-# Suppress the Pygame welcome message
-os.environ['PYGAME_HIDE_SUPPORT_PROMPT'] = "1"
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="pygame.pkgdata")
-import pygame
 from moviepy.video.io.VideoFileClip import VideoFileClip
+
+from ascii_rock.portaudio_player import PortAudioError, PortAudioWavPlayer
 
 # ASCII characters from dark to light
 ASCII_CHARS = " .:-=+*#%@"
-TEMP_AUDIO_FILE = "temp_audio.mp3"
+TEMP_AUDIO_FILE = "temp_audio.wav"
 
 def get_terminal_size():
     """Gets the current size of the terminal."""
@@ -79,6 +75,8 @@ def play_video(video_path, width, play_audio, no_downconvert):
 
     temp_video_path = None
     final_video_path = video_path
+    audio_extracted = False
+    audio_player = None
     old_settings = termios.tcgetattr(sys.stdin) # Get terminal settings at the start
 
     try:
@@ -115,22 +113,28 @@ def play_video(video_path, width, play_audio, no_downconvert):
         # --- End of FFMPEG Logic ---
 
         tty.setcbreak(sys.stdin.fileno()) # Set terminal for interactive input
-        audio_extracted = False
 
         if play_audio:
             try:
                 video_clip = VideoFileClip(final_video_path)
                 if video_clip.audio:
-                    video_clip.audio.write_audiofile(TEMP_AUDIO_FILE, logger=None)
+                    video_clip.audio.write_audiofile(
+                        TEMP_AUDIO_FILE,
+                        codec="pcm_s16le",
+                        ffmpeg_params=["-ac", "2"],
+                        logger=None,
+                    )
                     audio_extracted = True
                     video_clip.close()
-                    pygame.mixer.init()
-                    pygame.mixer.music.load(TEMP_AUDIO_FILE)
-                    pygame.mixer.music.play()
+                    audio_player = PortAudioWavPlayer(TEMP_AUDIO_FILE)
+                    audio_player.play()
                 else:
                     video_clip.close()
                     print("No audio track found in the video.")
                     play_audio = False
+            except PortAudioError as e:
+                print(f"Could not play audio with PortAudio: {e}")
+                play_audio = False
             except Exception as e:
                 print(f"Could not process audio: {e}")
                 play_audio = False
@@ -151,9 +155,9 @@ def play_video(video_path, width, play_audio, no_downconvert):
                 if key == ' ':
                     paused = not paused
                     if paused:
-                        if play_audio and audio_extracted: pygame.mixer.music.pause()
+                        if play_audio and audio_extracted and audio_player: audio_player.pause()
                     else:
-                        if play_audio and audio_extracted: pygame.mixer.music.unpause()
+                        if play_audio and audio_extracted and audio_player: audio_player.unpause()
                 elif key.lower() == 'q':
                     running = False
 
@@ -167,7 +171,7 @@ def play_video(video_path, width, play_audio, no_downconvert):
                 running = False
                 continue
             
-            if play_audio and audio_extracted and not pygame.mixer.music.get_busy():
+            if play_audio and audio_extracted and audio_player and not audio_player.is_busy():
                 running = False
                 continue
 
@@ -175,9 +179,9 @@ def play_video(video_path, width, play_audio, no_downconvert):
             os.system('cls' if os.name == 'nt' else 'clear')
             print(ascii_frame, end='', flush=True)
 
-            if play_audio and audio_extracted and pygame.mixer.music.get_busy():
+            if play_audio and audio_extracted and audio_player and audio_player.is_busy():
                 video_ts_ms = cap.get(cv2.CAP_PROP_POS_MSEC)
-                audio_ts_ms = pygame.mixer.music.get_pos()
+                audio_ts_ms = audio_player.get_pos()
                 if audio_ts_ms > 0 and video_ts_ms > audio_ts_ms:
                     sync_delay = (video_ts_ms - audio_ts_ms) / 1000.0
                     if sync_delay > 0.001: time.sleep(sync_delay)
@@ -195,9 +199,8 @@ def play_video(video_path, width, play_audio, no_downconvert):
         if 'cap' in locals() and cap.isOpened():
             cap.release()
         
-        if 'pygame' in sys.modules and pygame.mixer.get_init():
-            pygame.mixer.music.stop()
-            pygame.mixer.quit()
+        if 'audio_player' in locals() and audio_player:
+            audio_player.stop()
 
         # Cleanup temporary files
         if audio_extracted and os.path.exists(TEMP_AUDIO_FILE):

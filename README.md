@@ -16,13 +16,44 @@ This is the CLI implementation of the ascii-rock series by contemporary artist Y
 ## Installation
 
 1. Clone this repository.
-2. Run the `install` command using the Makefile:
+2. Install PortAudio from your system package manager or from source:
+
+```bash
+# Debian/Ubuntu
+sudo apt install libportaudio2
+
+# From source
+git clone https://github.com/PortAudio/portaudio
+cd portaudio
+mkdir build
+cd build
+cmake ..
+make
+sudo make install
+```
+
+3. Run the `install` command using the Makefile:
 
 ```bash
 make install
 ```
 
-This will install the `ascii-rock` command on your system.
+This will install the `ascii-rock` command on your system. Audio playback with
+`-m` requires the PortAudio shared library to be available at runtime.
+
+If PortAudio was installed under `/usr/local/lib`, refresh the dynamic loader
+cache:
+
+```bash
+sudo ldconfig
+```
+
+If PortAudio is installed in a non-standard location, point ascii-rock at the
+shared library:
+
+```bash
+ASCII_ROCK_PORTAUDIO=/path/to/libportaudio.so ascii-rock -m /path/to/video.mp4
+```
 
 ## Usage
 

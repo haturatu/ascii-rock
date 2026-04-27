@@ -13,7 +13,6 @@ dependencies = [
   "opencv-python-headless",
   "Pillow",
   "moviepy",
-  "pygame",
 ]
 
 [project.scripts]
