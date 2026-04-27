@@ -60,6 +60,9 @@ shared library:
 ASCII_ROCK_PORTAUDIO=/path/to/libportaudio.so ascii-rock -m /path/to/video.mp4
 ```
 
+Temporary audio files are written under `/dev/shm` when available. Set
+`ASCII_ROCK_TMPFS_DIR` to use a different tmpfs directory.
+
 ## Usage
 
 ```bash
