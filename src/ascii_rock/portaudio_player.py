@@ -129,6 +129,7 @@ class PortAudioWavPlayer:
         self.stream = ctypes.c_void_p()
         self._thread = None
         self._stopped = threading.Event()
+        self._finished_writing = threading.Event()
         self._pause_condition = threading.Condition()
         self._stream_lock = threading.Lock()
         self._paused = False
@@ -237,8 +238,16 @@ class PortAudioWavPlayer:
                 self._pause_condition.notify_all()
 
     def get_pos(self) -> int:
-        with self._position_lock:
-            return int(self._written_frames * 1000 / self.sample_rate)
+        if self._started_at is None:
+            return 0
+        # Sync should follow playback time, not Pa_WriteStream completion time.
+        # PipeWire/PortAudio buffering can make blocking writes advance unevenly.
+        with self._pause_condition:
+            paused_seconds = self._pause_seconds
+            if self._paused and self._pause_started_at is not None:
+                paused_seconds += time.monotonic() - self._pause_started_at
+        elapsed = time.monotonic() - self._started_at - paused_seconds
+        return max(0, min(int(elapsed * 1000), int(self.duration_seconds * 1000)))
 
     def is_busy(self) -> bool:
         if self._playback_error:
@@ -251,13 +260,21 @@ class PortAudioWavPlayer:
         with self._pause_condition:
             self._pause_condition.notify_all()
 
-        if self._opened and self.stream:
-            self.lib.Pa_AbortStream(self.stream)
+        if self._opened and self.stream and not self._finished_writing.is_set():
+            with self._stream_lock:
+                if self._opened and self.stream:
+                    self.lib.Pa_AbortStream(self.stream)
         if self._thread and self._thread.is_alive():
-            self._thread.join(timeout=1.0)
-        if self._opened and self.stream:
-            self.lib.Pa_CloseStream(self.stream)
-            self._opened = False
+            self._thread.join(timeout=3.0)
+        if self._thread and self._thread.is_alive():
+            return
+        with self._stream_lock:
+            if self._opened and self.stream:
+                if self._finished_writing.is_set():
+                    self.lib.Pa_StopStream(self.stream)
+                self.lib.Pa_CloseStream(self.stream)
+                self._opened = False
+                self.stream = ctypes.c_void_p()
         if self._initialized:
             self.lib.Pa_Terminate()
             self._initialized = False
@@ -288,5 +305,7 @@ class PortAudioWavPlayer:
                 offset += frames_to_write * self.bytes_per_frame
                 with self._position_lock:
                     self._written_frames += frames_to_write
+            if offset >= len(self.pcm_data):
+                self._finished_writing.set()
         finally:
             self._stopped.set()
